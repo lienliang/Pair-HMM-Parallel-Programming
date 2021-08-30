@@ -63,6 +63,7 @@ double *g_compute_full_prob_double_gpu(std::vector<testcase> tc) {
     //Input data
 
     while (num_batch > 0) {
+        cout << " num of batch in current stream: " << num_batch << endl << endl;
         if (num_batch < BATCH_REG) {
             effective_copy = num_batch;
         }
@@ -75,7 +76,6 @@ double *g_compute_full_prob_double_gpu(std::vector<testcase> tc) {
             unsigned int cur_copy_effective_rslen = tc[batch_id].rs_len;
             unsigned int cur_copy_effective_haplen = tc[batch_id].hap_len;
 
-            cout << "rs_len" << cur_copy_effective_rslen << endl;
 
             effective_rslen[batch_id] = cur_copy_effective_rslen;
             effective_haplen[batch_id] = cur_copy_effective_haplen;
@@ -86,7 +86,6 @@ double *g_compute_full_prob_double_gpu(std::vector<testcase> tc) {
                 insertionGOP[batch_id * RSLEN + read] = (unsigned char) (tc[batch_id]).i[read];
                 deletionGOP[batch_id * RSLEN + read] = (unsigned char) (tc[batch_id]).d[read];
                 overallGCP[batch_id * RSLEN + read] = (unsigned char) (tc[batch_id]).c[read];
-                //cout << (unsigned)((tc[batch_id]).c[read]) << endl;
             }
 
             for (int ref = 0; ref < cur_copy_effective_haplen; ref++) {
@@ -114,6 +113,7 @@ double *g_compute_full_prob_double_gpu(std::vector<testcase> tc) {
             no_of_batch_result++;
         }
 
+        
         num_batch -= BATCH_REG;
     }
 
@@ -131,18 +131,6 @@ double *g_compute_full_prob_double_gpu(std::vector<testcase> tc) {
     return result_batch;
 }
 
-/*
-char *generate_random_sequence(int length) {
-    srand((unsigned)time(NULL));
-
-    char *random_array = (char*)calloc(length, sizeof(char));
-
-    for (int i = 0; i < length; i++) {
-        random_array[i] = (char)(rand() % 256);
-    }
-
-    return random_array;
-} */
 
 /*
 
@@ -185,7 +173,6 @@ int main (const int argc, char const *const argv[])
         std::vector<testcase> h_input;
 
         int no_of_batch = cur_testcase.haplotypes.size();
-        cout << no_of_batch << endl;
 
         for (int i = 0; i < no_of_batch; i++) {
 
@@ -209,16 +196,13 @@ int main (const int argc, char const *const argv[])
             new_input.hap = haplotype.bases;
             new_input.rs = read.bases;
 
-            //cout << (unsigned)(read.gcp_quals[0]) << endl;
 
             h_input.push_back(new_input);
         }
 
         double *result = g_compute_full_prob_double_gpu(h_input);
-        std::cout << "result : " << result[0] << std::endl;
     }
 
-    std::cout << counter << std::endl;
     
     return 0;
 }

@@ -68,17 +68,17 @@ __device__ double approximateLog10SumLog10_gpu(double a, double b) {
 
 /**************************** initialization function *****************************/
 
-__global__ void initialization_gpu(double *matchToMatchProb_Cache, unsigned int* effective_rslen, unsigned int *effective_haplen, double *transition, unsigned char *insertionGOP, unsigned char *deletionGOP, unsigned char *overallGCP, double *prior, unsigned char *haplotypeBases, unsigned char *readBases, unsigned char *readQuals) {
+__global__ void initialization_gpu(double *forward_matrix, double *matchToMatchProb_Cache, unsigned int* effective_rslen, unsigned int *effective_haplen, double *transition, unsigned char *insertionGOP, unsigned char *deletionGOP, unsigned char *overallGCP, double *prior, unsigned char *haplotypeBases, unsigned char *readBases, unsigned char *readQuals) {
 
   // Part 1:
-  /* Ref:
+  /* Operation:
     dim3 dimBlock(MAX_QUAL + 1, 1, 1);
     dim3 dimGrid(1, MAX_QUAL + 1, 1);
   */
 
   int t = blockIdx.x * MAX_THREADS_PER_BLOCK + threadIdx.x;
 
-  int batch_id = blockIdx.x;
+  int batch_id = blockIdx.y;
   int x_dim = t / (MAX_QUAL + 1);
   int y_dim = t % (MAX_QUAL + 1);
 
@@ -93,14 +93,12 @@ __global__ void initialization_gpu(double *matchToMatchProb_Cache, unsigned int*
     }
   }
   __syncthreads();
-  cdpErrchk( cudaPeekAtLastError() );
 
   // Part 2:
-  /*Ref:
+  /* Operation:
     dim3 dimBlock(rslen + 1, 1, 1);
     dim3 dimGrid(1, 6, 1);
-  
-
+  */
   
   int rs_id = t / 6;
   int type_id = t % 6;
@@ -166,20 +164,21 @@ __global__ void initialization_gpu(double *matchToMatchProb_Cache, unsigned int*
     }
   }
 
+
   __syncthreads();
- cdpErrchk( cudaPeekAtLastError() );
- */
+ 
   
   // Part 3:
-  /*
-    ref:
+  /* Operation:
     dim3 dimBlock(haplen, 1, 1);
     dim3 dimGrid(1, rslen, 1);
   */
   
   int i = t / HAPLEN;
   unsigned char x = readBases[i];
-  unsigned char qual = readQuals[i];
+  
+  unsigned int qual = readQuals[i];
+  
 
   int j = t % HAPLEN;
 
@@ -191,8 +190,17 @@ __global__ void initialization_gpu(double *matchToMatchProb_Cache, unsigned int*
   }
 
   __syncthreads();
-  cdpErrchk( cudaPeekAtLastError() );
-  
+
+  // Part 4:
+  /* Operation:
+    Assign Initial Value to delete state
+  */
+
+  if (t < effective_haplen[batch_id]) {
+    forward_4d(0, t, batch_id, 2) = INITIAL_CONDITION / effective_haplen[batch_id];
+  }
+
+  __syncthreads();
 }
 
 
@@ -221,7 +229,7 @@ void pair_HMM_diagonal(
   int states_id = threadIdx.y;
   int diagonal_id = threadIdx.x;
   int unit_length = blockDim.x;
-  //int num_batch = gridDim.x;
+  int num_batch = gridDim.x;
 
   /*
     For Ref:
@@ -235,14 +243,13 @@ void pair_HMM_diagonal(
   if (states_id == 0 && diagonal_id == 0) {
 
     dim3 dimBlock(MAX_THREADS_PER_BLOCK, 1, 1);
-    dim3 dimGrid(ceil(HAPLEN * RSLEN / (float)MAX_THREADS_PER_BLOCK), 1, 1);
+    dim3 dimGrid(ceil(HAPLEN * RSLEN / (float)MAX_THREADS_PER_BLOCK), num_batch, 1);
     
-    initialization_gpu<<<dimGrid, dimBlock>>>(matchToMatchProb_Cache, effective_rslen, effective_haplen, transition, insertionGOP, deletionGOP, overallGCP, prior, haplotypeBases, readBases, readQuals);
+    initialization_gpu<<<dimGrid, dimBlock>>>(forward_matrix, matchToMatchProb_Cache, effective_rslen, effective_haplen, transition, insertionGOP, deletionGOP, overallGCP, prior, haplotypeBases, readBases, readQuals);
     
-    printf("Done Initialization\n");
+    //printf("Done Initialization\n");
     cudaDeviceSynchronize();
 
-    cdpErrchk( cudaPeekAtLastError() );
 
     curBlock_configuration[0] = effective_rslen[batch_id]; //rslen is in x_ditection
     curBlock_configuration[1] = effective_haplen[batch_id]; //haplen is in y_direction
@@ -252,7 +259,6 @@ void pair_HMM_diagonal(
 
 
   __syncthreads();
-  cdpErrchk( cudaPeekAtLastError() );
 
   int x_pos = 0;
   int y_pos = 0;
@@ -287,7 +293,6 @@ void pair_HMM_diagonal(
   }
 
   
-  cdpErrchk( cudaPeekAtLastError() );
   // Then move towards the end spot of calculation (from diagonal)
   for (int y_offset = 1; y_offset < curBlock_configuration[1]; y_offset++) {
 
@@ -318,13 +323,11 @@ void pair_HMM_diagonal(
   }
 
   
-  cdpErrchk( cudaPeekAtLastError() );
   if (states_id == 0 && diagonal_id == 0) {
     finalSumProbabilities[batch_id] = log10(finalSumProbabilities[batch_id]) - INITIAL_CONDITION_LOG10;
   }
 
   
-  cdpErrchk( cudaPeekAtLastError() );
   return;
 }
 
@@ -349,9 +352,6 @@ int subComputeReadLikelihoodGivenHaplotypeLog10(
   unsigned char overallGCP[BATCH_REG*RSLEN]
 )
 {
-
-  //declase the finalSum Container
-  //double *finalSumProbabilities = (double*)calloc(effective_copy, sizeof(double));
 
   unsigned int *dev_effective_rslen;
   unsigned int *dev_effective_haplen;
@@ -378,6 +378,7 @@ int subComputeReadLikelihoodGivenHaplotypeLog10(
   size_t haplotype_size = (HAPLEN) * BATCH_REG * sizeof(unsigned char);
   size_t read_size = (RSLEN) * BATCH_REG * sizeof(unsigned char);
 
+
   //Malloc corresponding space for on device calculation
   cudaMalloc((void**)&dev_effective_rslen, effective_copy * sizeof(unsigned int));
   cudaMalloc((void**)&dev_effective_haplen, effective_copy * sizeof(unsigned int));
@@ -391,6 +392,7 @@ int subComputeReadLikelihoodGivenHaplotypeLog10(
   cudaMalloc((void**)&dev_readBases, read_size);
   cudaMalloc((void**)&dev_readQuals, read_size);
 
+
   //initialize helper arrays to be zeros
   cudaMalloc((void**)&dev_trans, transition_size);
   cudaMemset(dev_trans, 0.0f, transition_size);
@@ -401,7 +403,6 @@ int subComputeReadLikelihoodGivenHaplotypeLog10(
   cudaMalloc((void**)&matchToMatchProb_Cache, matchToMatchProb_Cache_size);
   cudaMemset(matchToMatchProb_Cache, 0.0f, matchToMatchProb_Cache_size);
 
-  gpuErrchk( cudaPeekAtLastError() );
 
   //declare the number of diagonal length
   //int max_diagonal_len = 300;
@@ -423,7 +424,6 @@ int subComputeReadLikelihoodGivenHaplotypeLog10(
   cudaMemcpy(dev_readBases, readBases, read_size, cudaMemcpyHostToDevice);
   cudaMemcpy(dev_readQuals, readQuals, read_size, cudaMemcpyHostToDevice);
 
-  gpuErrchk( cudaPeekAtLastError() );
 
   pair_HMM_diagonal<<<dimGrid, dimBlock>>>
   (
@@ -442,8 +442,6 @@ int subComputeReadLikelihoodGivenHaplotypeLog10(
     dev_overallGCP
   );
 
-  gpuErrchk( cudaPeekAtLastError() );
-  
   cudaDeviceSynchronize();
 
   cudaMemcpy(result, dev_finalSumProbabilities, effective_copy * sizeof(double), cudaMemcpyDeviceToHost);
@@ -469,7 +467,6 @@ int subComputeReadLikelihoodGivenHaplotypeLog10(
   cudaFree(dev_prior);
   cudaFree(matchToMatchProb_Cache);
 
-  
 
   return 1;
 }

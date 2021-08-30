@@ -17,9 +17,9 @@
 #include <assert.h>
 
 //Define any useful program-wide constants here
-#define RSLEN 320   //rslen is ReadLength (maximum allowed 300) => x_pos
-#define HAPLEN 320   //haplen is HaplotypeLength (maximum allowed 300) => y_pos
-#define BATCH_REG 44
+#define RSLEN 128  //rslen is ReadLength (maximum allowed 128) => x_pos
+#define HAPLEN 128   //haplen is HaplotypeLength (maximum allowed 128) => y_pos
+#define BATCH_REG 33
 #define BATCH_LAG 22
 #define STATES 3
 
@@ -32,6 +32,7 @@
 
 #define MAX_QUAL 254
 #define MAX_TOLERANCE 8.0
+#define INITIAL_CONDITION pow(2,1020)
 #define INITIAL_CONDITION_LOG10 log10(pow(2,1020))
 #define CACHE_SIZE (((MAX_QUAL + 1) * (MAX_QUAL + 2)) >> 1)
 
