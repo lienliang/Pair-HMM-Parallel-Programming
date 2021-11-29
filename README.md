@@ -16,4 +16,5 @@ Developed by:
   
 This open source project contains the source code for the Pair-HMM Forward Algorithm for DNA Sequence Alignment. 
   
-When referencing this application in a publication, please cite the following paper: <# Pending for publication in proceedings >
+When referencing this application in a publication, please cite the following paper: <br />
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Enliang Li, Subho S. Banerjee, Sitao Huang, Ravishankar K. Iyer, and Deming Chen, “Improved GPU Implementations of the Pair-HMM Forward Algorithm for DNA Sequence Alignment”, *Proceedings of IEEE International Conference on Computer Design*, October 2021.
